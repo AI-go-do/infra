@@ -1,0 +1,4 @@
+# 비밀값이 든 실제 env 파일은 올리지 않는다
+.env
+.env.*
+!.env.example
