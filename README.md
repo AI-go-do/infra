@@ -8,6 +8,38 @@ M-SPACE 서버 실행 설정 (담당: 재웅). 앱 코드는 각 저장소(mspac
 | `nginx/default.conf` | `/api` → core, 나머지 → 화면(web, 준비 중) |
 | `.env.example` | 환경별 값 목록 (값은 비움). 실제 값은 `.env.dev` / `.env.prod`, 커밋 금지 |
 
+## 전체 흐름
+
+코드가 서버에 올라가기까지. 팀원은 PR만 올리면 되고, 나머지는 자동으로 돈다.
+
+```mermaid
+flowchart LR
+  A[PR 올림] --> B{CI<br/>build·test}
+  B -- 통과 --> C[develop / main 머지]
+  C --> D[Deploy: 이미지 빌드]
+  D --> E[(GHCR<br/>ghcr.io/ai-go-do)]
+  E -. DEPLOY_ENABLED=true일 때 .-> F[SSH로 서버 접속]
+  F --> G[compose pull → up]
+  G --> H{health 확인}
+```
+
+| 언제 | 무엇이 | 결과 |
+|---|---|---|
+| PR 올릴 때 | `ci.yml` (빌드·테스트, 레포마다 Sonar) | 실패하면 머지 버튼 막힘 |
+| develop·main에 머지될 때 | `deploy.yml`의 `image` job | 이미지 태그 `develop`/`main` + `sha-xxxxxxx` |
+| 그 다음 (서버 준비 후 켬) | `deploy.yml`의 `server` job | develop → 개발 서버(8411), main → 시연 서버(8412) |
+
+서버 안에서는 이렇게 연결된다. 밖에서 들어오는 문은 nginx 하나뿐이다.
+
+```mermaid
+flowchart LR
+  U((사용자)) --> N[nginx<br/>8411 개발 · 8412 시연]
+  N -- /api --> C[core<br/>Spring Boot]
+  C --> P[(PostgreSQL)]
+  AG[agent<br/>텔레그램 비서] --> M[mcp<br/>도구 서버]
+  M --> C
+```
+
 ## 띄우기
 
 ```bash
