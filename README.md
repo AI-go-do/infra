@@ -13,7 +13,7 @@ M-SPACE 서버 실행 설정 (담당: 재웅). 앱 코드는 각 저장소(mspac
 ```bash
 cp .env.example .env.dev        # DB_PASSWORD 채우기
 docker compose -p mspace-dev  --env-file .env.dev  up -d    # 개발 (8411, develop 이미지)
-docker compose -p mspace-prod --env-file .env.prod up -d    # 시연 (8410, main 이미지)
+docker compose -p mspace-prod --env-file .env.prod up -d    # 시연 (8412, main 이미지)
 curl localhost:8411/actuator/health
 ```
 
