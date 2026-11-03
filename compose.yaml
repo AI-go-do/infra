@@ -34,6 +34,14 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILE:-dev}
       # 키패드(게이트웨이)가 Authorization: Bearer 로 보내는 장치 토큰. 비면 core가 장치 요청을 전부 401로 막으니 비어 있으면 아예 안 켠다
       MSPACE_DEVICE_TOKEN: ${MSPACE_DEVICE_TOKEN:?.env에 MSPACE_DEVICE_TOKEN을 넣어 주세요 (openssl rand -hex 32)}
+      # 로그인 토큰 서명값. 비면 core가 켤 때마다 새로 만들어서, 재시작(배포)할 때마다 모두 로그아웃된다
+      JWT_SECRET: ${JWT_SECRET:?.env에 JWT_SECRET을 넣어 주세요 (openssl rand -base64 48)}
+      # refresh 토큰 쿠키를 HTTPS로만 보낸다. http 주소로만 열 때(맥 Safari 시험)만 false
+      MSPACE_AUTH_COOKIE_SECURE: ${MSPACE_AUTH_COOKIE_SECURE:-true}
+      # 인증번호 메일. false면 번호가 core 로그에만 찍혀서 학생이 로그인할 수 없다
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       TZ: Asia/Seoul
     depends_on:
       db:
@@ -59,6 +67,10 @@ services:
   agent:
     image: ghcr.io/ai-go-do/mspace-assistant-agent:${ASSISTANT_TAG:-develop}
     environment:
+      MCP_SERVER_URL: http://mcp:8090
+      CORE_BASE_URL: http://core:8080
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}  # gemini / ollama
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       TZ: Asia/Seoul
     depends_on:
       mcp:
