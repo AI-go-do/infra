@@ -46,6 +46,7 @@ flowchart LR
 
 ```bash
 cp .env.example .env.dev        # DB_PASSWORD 채우기
+openssl rand -hex 32            # 나온 값을 .env.dev(.env.prod는 따로 하나 더)의 MSPACE_DEVICE_TOKEN에. 비어 있으면 compose가 멈춘다
 # 이미 .env.dev/.env.prod가 있으면 WEB_TAG 줄을 추가 (개발 develop, 시연 main). 없으면 compose가 멈추고 알려 준다
 docker compose -p mspace-dev  --env-file .env.dev  up -d    # 개발 (8411, develop 이미지)
 docker compose -p mspace-prod --env-file .env.prod up -d    # 시연 (8412, main 이미지)
