@@ -27,7 +27,15 @@ curl localhost:8411/actuator/health
 ```bash
 scripts/backup.sh prod                     # 지금 바로 한 번
 crontab -e                                 # 매일 새벽 4시 자동
-0 4 * * * cd ~/infra && scripts/backup.sh prod >> backups/backup.log 2>&1
+0 4 * * * cd ~/infra && mkdir -p backups && scripts/backup.sh prod >> backups/backup.log 2>&1
 ```
 
-복구 방법은 `scripts/backup.sh` 맨 아래 주석에 있다. 복구하면 지금 DB가 백업 시점으로 덮어써진다.
+백업 파일은 나만 읽을 수 있게(700/600) 만든다. 학번·이메일이 들어 있다.
+
+### 복구
+
+```bash
+scripts/restore.sh prod backups/prod/파일.sql.gz
+```
+
+복구하면 지금 DB가 **백업 시점으로 통째로 바뀐다**. 스크립트는 먼저 빈 새 DB에 백업을 넣어 보고(SQL 오류가 하나라도 나면 멈추고 지금 DB는 그대로), 성공하면 core·mcp·agent를 잠깐 멈춘 뒤 DB 이름만 바꿔 끼운다. 옛 DB는 `<DB이름>_before_<시각>`으로 남으니 확인한 뒤 지운다. 확인을 위해 `prod`를 한 번 더 입력해야 한다.

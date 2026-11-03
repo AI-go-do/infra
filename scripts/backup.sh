@@ -3,7 +3,8 @@
 #   사용: scripts/backup.sh dev    (mspace-dev,  .env.dev)
 #         scripts/backup.sh prod   (mspace-prod, .env.prod)
 #   매일 새벽 4시 자동 실행(서버 crontab -e):
-#   0 4 * * * cd ~/infra && scripts/backup.sh prod >> backups/backup.log 2>&1
+#   0 4 * * * cd ~/infra && mkdir -p backups && scripts/backup.sh prod >> backups/backup.log 2>&1
+#   복구는 scripts/restore.sh
 set -euo pipefail
 
 ENV_NAME="${1:?dev 또는 prod를 넣어 주세요}"
@@ -15,13 +16,16 @@ set -a; . "./$ENV_FILE"; set +a              # DB_NAME, DB_USERNAME 읽기
 
 KEEP_DAYS="${KEEP_DAYS:-7}"
 OUT_DIR="backups/${ENV_NAME}"
+umask 077                                    # 백업에는 개인정보가 있다: 나만 읽게
 mkdir -p "$OUT_DIR"
+chmod 700 backups "$OUT_DIR"
 OUT="${OUT_DIR}/${DB_NAME}-$(date +%Y%m%d-%H%M%S).sql.gz"
+trap 'rm -f "${OUT}.tmp"' EXIT               # 중간에 실패하면 덜 된 파일을 지운다
 
 # db 컨테이너 안에서 pg_dump를 돌린다 (DB 포트를 밖에 안 열어도 됨)
-# --clean --if-exists: 복구할 때 기존 테이블을 지우고 다시 만든다
+# 복구는 빈 DB에 넣는 방식이라 --clean은 쓰지 않는다 (scripts/restore.sh)
 docker compose -p "mspace-${ENV_NAME}" --env-file "$ENV_FILE" exec -T db \
-  pg_dump -U "$DB_USERNAME" -d "$DB_NAME" --clean --if-exists \
+  pg_dump -U "$DB_USERNAME" -d "$DB_NAME" --no-owner \
   | gzip > "${OUT}.tmp"
 mv "${OUT}.tmp" "$OUT"                       # 끝까지 성공한 것만 이름을 붙인다
 
@@ -31,5 +35,3 @@ mv "${OUT}.tmp" "$OUT"                       # 끝까지 성공한 것만 이름
 find "$OUT_DIR" -name '*.sql.gz' -mtime +"$KEEP_DAYS" -delete
 echo "$(date '+%F %T') 백업 완료: $OUT ($(du -h "$OUT" | cut -f1))"
 
-# 복구 (조심: 지금 DB 내용이 백업 시점으로 바뀐다):
-#   gzip -dc backups/prod/파일.sql.gz | docker compose -p mspace-prod --env-file .env.prod exec -T db psql -U "$DB_USERNAME" -d "$DB_NAME"
