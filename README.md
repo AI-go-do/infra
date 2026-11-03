@@ -52,6 +52,12 @@ docker compose -p mspace-prod --env-file .env.prod up -d    # 시연 (8412, main
 curl localhost:8411/actuator/health
 ```
 
+화면 이미지(`mspace-web`)는 mspace-web 레포의 `deploy.yml`이 develop·main에 머지될 때 GHCR에 올린다. 아직 그 태그가 GHCR에 없으면 `up`이 web을 받지 못해 멈추니, 그동안은 같은 이름으로 직접 빌드해 쓴다(compose는 로컬에 있는 이미지를 먼저 쓴다).
+
+```bash
+docker build -t ghcr.io/ai-go-do/mspace-web:develop ../mspace-web   # mspace-web 클론 위치
+```
+
 ## 되돌리기
 
 `.env.*`의 `CORE_TAG`(화면은 `WEB_TAG`, 비서는 `ASSISTANT_TAG`)를 이전 이미지(`sha-xxxxxxx`)로 바꾸고 `docker compose ... up -d`.
