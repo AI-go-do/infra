@@ -4,8 +4,8 @@ M-SPACE 서버 실행 설정 (담당: 재웅). 앱 코드는 각 저장소(mspac
 
 | 파일 | 하는 일 |
 |---|---|
-| `compose.yaml` | 입구 nginx → core → PostgreSQL, AI 비서(mcp·agent)는 안쪽에서만. 밖으로 열리는 포트는 nginx 하나 |
-| `nginx/default.conf` | `/api` → core, 나머지 → 화면(web, 준비 중) |
+| `compose.yaml` | 입구 nginx → 화면(web)·core → PostgreSQL, AI 비서(mcp·agent)는 안쪽에서만. 밖으로 열리는 포트는 nginx 하나 |
+| `nginx/default.conf` | `/api` → core, 나머지 → 화면(web) |
 | `scripts/backup.sh` | DB를 `backups/dev/`·`backups/prod/`에 날짜별로 백업, 7일 지난 건 삭제. 서버 cron으로 매일 실행 |
 | `.env.example` | 환경별 값 목록 (값은 비움). 실제 값은 `.env.dev` / `.env.prod`, 커밋 금지 |
 
@@ -35,6 +35,7 @@ flowchart LR
 ```mermaid
 flowchart LR
   U((사용자)) --> N[nginx<br/>8411 개발 · 8412 시연]
+  N -- / --> W[web<br/>PWA 화면]
   N -- /api --> C[core<br/>Spring Boot]
   C --> P[(PostgreSQL)]
   AG[agent<br/>텔레그램 비서] --> M[mcp<br/>도구 서버]
@@ -45,14 +46,21 @@ flowchart LR
 
 ```bash
 cp .env.example .env.dev        # DB_PASSWORD 채우기
+# 이미 .env.dev/.env.prod가 있으면 WEB_TAG 줄을 추가 (개발 develop, 시연 main). 없으면 compose가 멈추고 알려 준다
 docker compose -p mspace-dev  --env-file .env.dev  up -d    # 개발 (8411, develop 이미지)
 docker compose -p mspace-prod --env-file .env.prod up -d    # 시연 (8412, main 이미지)
 curl localhost:8411/actuator/health
 ```
 
+화면 이미지(`mspace-web`)는 mspace-web 레포의 `deploy.yml`이 develop·main에 머지될 때 GHCR에 올린다. 아직 그 태그가 GHCR에 없으면 `up`이 web을 받지 못해 멈추니, 그동안은 같은 이름으로 직접 빌드해 쓴다(compose는 로컬에 있는 이미지를 먼저 쓴다).
+
+```bash
+docker build -t ghcr.io/ai-go-do/mspace-web:develop ../mspace-web   # mspace-web 클론 위치
+```
+
 ## 되돌리기
 
-`.env.*`의 `CORE_TAG`(비서는 `ASSISTANT_TAG`)를 이전 이미지(`sha-xxxxxxx`)로 바꾸고 `docker compose ... up -d`.
+`.env.*`의 `CORE_TAG`(화면은 `WEB_TAG`, 비서는 `ASSISTANT_TAG`)를 이전 이미지(`sha-xxxxxxx`)로 바꾸고 `docker compose ... up -d`.
 
 ## 백업
 

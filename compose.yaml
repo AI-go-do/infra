@@ -15,6 +15,13 @@ services:
     depends_on:
       core:
         condition: service_started
+      web:
+        condition: service_started
+    restart: unless-stopped
+
+  # 화면(PWA): 빌드한 정적 파일을 내는 nginx (mspace-web 레포 이미지). 밖으로 열지 않고 gateway를 통해서만
+  web:
+    image: ghcr.io/ai-go-do/mspace-web:${WEB_TAG:?.env에 WEB_TAG를 넣어 주세요 (개발 develop, 시연 main)}
     restart: unless-stopped
 
   # 예약 코어 (GitHub Actions가 GHCR에 올린 이미지)
