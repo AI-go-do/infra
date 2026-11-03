@@ -47,8 +47,8 @@ flowchart LR
 ```bash
 cp .env.example .env.dev        # DB_PASSWORD 채우기
 openssl rand -hex 32            # 장치 토큰. 개발·시연용을 따로 만들어 .env.dev / .env.prod의 MSPACE_DEVICE_TOKEN에 넣는다. 비어 있으면 compose가 멈춘다
-openssl rand -base64 48         # 로그인 토큰 서명값. 개발·시연용을 따로 만들어 JWT_SECRET에 넣는다. 비어 있으면 compose가 멈춘다
 # 같은 값을 그 서버를 부르는 키패드(게이트웨이) 장치의 .env에도 넣는다. 다르면 장치 요청이 401
+openssl rand -base64 48         # 로그인 토큰 서명값. 개발·시연용을 따로 만들어 JWT_SECRET에 넣는다. 비어 있으면 compose가 멈춘다
 # 이미 .env.dev/.env.prod가 있으면 WEB_TAG 줄을 추가 (개발 develop, 시연 main). 없으면 compose가 멈추고 알려 준다
 docker compose -p mspace-dev  --env-file .env.dev  up -d    # 개발 (8411, develop 이미지)
 docker compose -p mspace-prod --env-file .env.prod up -d    # 시연 (8412, main 이미지)
