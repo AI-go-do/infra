@@ -4,8 +4,7 @@ M-SPACE 서버 실행 설정 (담당: 재웅). 앱 코드는 각 저장소(mspac
 
 | 파일 | 하는 일 |
 |---|---|
-| `compose.yaml` | 입구 nginx → 화면(web)·core → PostgreSQL, AI 비서(mcp·agent)는 안쪽에서만. 밖으로 열리는 포트는 nginx 하나 |
-| `nginx/default.conf` | `/api` → core, 나머지 → 화면(web) |
+| `compose.yaml` | API 게이트웨이(mspace-gateway) → 화면(web)·core·agent, core → PostgreSQL, MCP는 안쪽에서만. 밖으로 열리는 포트는 게이트웨이 하나 |
 | `scripts/backup.sh` | DB를 `backups/dev/`·`backups/prod/`에 날짜별로 백업, 7일 지난 건 삭제. 서버 cron으로 매일 실행 |
 | `.env.example` | 환경별 값 목록 (값은 비움). 실제 값은 `.env.dev` / `.env.prod`, 커밋 금지 |
 
@@ -30,15 +29,17 @@ flowchart LR
 | develop·main에 머지될 때 | `deploy.yml`의 `image` job | 이미지 태그 `develop`/`main` + `sha-xxxxxxx` |
 | 그 다음 (서버 준비 후 켬) | `deploy.yml`의 `server` job | develop → 개발 서버(8411), main → 시연 서버(8412) |
 
-서버 안에서는 이렇게 연결된다. 밖에서 들어오는 문은 nginx 하나뿐이다.
+서버 안에서는 이렇게 연결된다. 앞의 nginx(학교 서버, HTTPS)를 지나면 들어오는 문은 게이트웨이 하나뿐이다.
 
 ```mermaid
 flowchart LR
-  U((사용자)) --> N[nginx<br/>8411 개발 · 8412 시연]
-  N -- / --> W[web<br/>PWA 화면]
-  N -- /api --> C[core<br/>Spring Boot]
+  U((사용자)) --> X[nginx<br/>학교 서버 · HTTPS]
+  X --> G[API 게이트웨이<br/>8411 개발 · 8412 시연<br/>JWT 확인]
+  G -- / --> W[web<br/>PWA 화면]
+  G -- /api --> C[core<br/>Spring Boot]
+  G -- /api/agent --> AG[agent<br/>비서]
   C --> P[(PostgreSQL)]
-  AG[agent<br/>텔레그램 비서] --> M[mcp<br/>도구 서버]
+  AG --> M[mcp<br/>도구 서버]
   M --> C
 ```
 
@@ -49,7 +50,7 @@ cp .env.example .env.dev        # DB_PASSWORD 채우기
 openssl rand -hex 32            # 장치 토큰. 개발·시연용을 따로 만들어 .env.dev / .env.prod의 MSPACE_DEVICE_TOKEN에 넣는다. 비어 있으면 compose가 멈춘다
 # 같은 값을 그 서버를 부르는 키패드(게이트웨이) 장치의 .env에도 넣는다. 다르면 장치 요청이 401
 openssl rand -base64 48         # 로그인 토큰 서명값. 개발·시연용을 따로 만들어 JWT_SECRET에 넣는다. 비어 있으면 compose가 멈춘다
-# 이미 .env.dev/.env.prod가 있으면 WEB_TAG 줄을 추가 (개발 develop, 시연 main). 없으면 compose가 멈추고 알려 준다
+# 이미 .env.dev/.env.prod가 있으면 WEB_TAG·GATEWAY_TAG 줄을 추가 (개발 develop, 시연 main). 없으면 compose가 멈추고 알려 준다
 docker compose -p mspace-dev  --env-file .env.dev  up -d    # 개발 (8411, develop 이미지)
 docker compose -p mspace-prod --env-file .env.prod up -d    # 시연 (8412, main 이미지)
 curl localhost:8411/actuator/health
@@ -61,27 +62,28 @@ curl localhost:8411/actuator/health
 docker build -t ghcr.io/ai-go-do/mspace-web:develop ../mspace-web   # mspace-web 클론 위치
 ```
 
-## 입구 nginx 포트와 설정 반영
+## 게이트웨이 포트와 설정 반영
 
-- gateway는 `127.0.0.1:${PORT}`(서버 안)에서만 받는다. 학교 nginx가 같은 서버에서 `proxy_pass http://127.0.0.1:<포트>`로 부르므로 정상 길은 그대로이고, 밖에서 `http://s2.java21.net:<포트>`로 HTTPS 없이 바로 들어오는 길은 막힌다. 서버에서 `ss -tlnp | grep 8411`이 `127.0.0.1:8411`로 나오면 맞다.
+- gateway는 `127.0.0.1:${PORT}`(서버 안)에서만 받는다. 앞의 nginx(학교 서버)가 같은 서버에서 `proxy_pass http://127.0.0.1:<포트>`로 부르므로 정상 길은 그대로이고, 밖에서 `http://s2.java21.net:<포트>`로 HTTPS 없이 바로 들어오는 길은 막힌다. 서버에서 `ss -tlnp | grep 8411`이 `127.0.0.1:8411`로 나오면 맞다.
 - 맥에서 같은 와이파이의 폰·키패드 노트북으로 시험할 때만 `.env.dev`에 `BIND_ADDR=0.0.0.0`. 서버에서는 넣지 않는다.
-- `nginx/` 폴더를 통째로 연결한다. 각 레포 배포(server job)가 끝에 일회용 컨테이너로 `nginx -t` → `gateway` `up` → `nginx -s reload` 하므로, `nginx/default.conf`를 고쳐 main에 머지하면 다음 배포 때 반영된다. 바로 반영하려면 서버에서:
+- 길(어느 주소를 어디로)과 로그인 없이 여는 API 목록은 **mspace-gateway 레포**에 있다(`application.yml`, `PublicPaths.java`). 바꾸려면 그 레포에 PR → 머지되면 이미지가 새로 나오고 배포 때 바뀐다.
+- `JWT_SECRET`은 core와 게이트웨이가 같은 값을 쓴다(같은 `.env`에서 넘김). 다르면 로그인한 요청이 전부 401.
+- 게이트웨이 이미지를 바로 바꾸려면 서버에서:
 
 ```bash
 T=dev   # 시연 서버는 T=prod
 C="docker compose -p mspace-$T --env-file .env.$T"
-# 일회용 컨테이너로 먼저 문법 확인(포트 안 엶) → 통과하면 gateway 갱신 → 다시 읽기
-git pull --ff-only && $C run --rm --no-deps -T gateway nginx -t && $C up -d --no-deps gateway && $C exec -T gateway nginx -s reload
+git pull --ff-only && $C config -q && $C pull gateway && $C up -d --no-deps gateway
 ```
 
 ## 되돌리기
 
-`.env.*`의 `CORE_TAG`(화면은 `WEB_TAG`, 비서는 `ASSISTANT_TAG`)를 이전 이미지(`sha-xxxxxxx`)로 바꾸고, 입구 nginx 설정을 먼저 확인한 뒤 다시 켠다.
+`.env.*`의 `CORE_TAG`(화면은 `WEB_TAG`, 비서는 `ASSISTANT_TAG`, 게이트웨이는 `GATEWAY_TAG`)를 이전 이미지(`sha-xxxxxxx`)로 바꾸고, compose 설정을 먼저 확인한 뒤 다시 켠다.
 
 ```bash
 T=dev   # 시연 서버는 T=prod
 C="docker compose -p mspace-$T --env-file .env.$T"
-$C run --rm --no-deps -T gateway nginx -t && $C up -d
+$C config -q && $C up -d
 ```
 
 ## 백업
