@@ -61,6 +61,17 @@ curl localhost:8411/actuator/health
 docker build -t ghcr.io/ai-go-do/mspace-web:develop ../mspace-web   # mspace-web 클론 위치
 ```
 
+## 입구 nginx 포트와 설정 반영
+
+- gateway는 `127.0.0.1:${PORT}`(서버 안)에서만 받는다. 학교 nginx가 같은 서버에서 `proxy_pass http://127.0.0.1:<포트>`로 부르므로 정상 길은 그대로이고, 밖에서 `http://s2.java21.net:<포트>`로 HTTPS 없이 바로 들어오는 길은 막힌다. 서버에서 `ss -tlnp | grep 8411`이 `127.0.0.1:8411`로 나오면 맞다.
+- 맥에서 같은 와이파이의 폰·키패드 노트북으로 시험할 때만 `.env.dev`에 `BIND_ADDR=0.0.0.0`. 서버에서는 넣지 않는다.
+- `nginx/` 폴더를 통째로 연결한다. 각 레포 배포(server job)가 끝에 `gateway`를 `up` → `nginx -t` → `nginx -s reload` 하므로, `nginx/default.conf`를 고쳐 main에 머지하면 다음 배포 때 반영된다. 바로 반영하려면 서버에서:
+
+```bash
+C="docker compose -p mspace-dev --env-file .env.dev"
+git pull --ff-only && $C up -d --no-deps gateway && $C exec -T gateway nginx -t && $C exec -T gateway nginx -s reload
+```
+
 ## 되돌리기
 
 `.env.*`의 `CORE_TAG`(화면은 `WEB_TAG`, 비서는 `ASSISTANT_TAG`)를 이전 이미지(`sha-xxxxxxx`)로 바꾸고 `docker compose ... up -d`.
