@@ -32,6 +32,8 @@ services:
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILE:-dev}
+      # 키패드(게이트웨이)가 Authorization: Bearer 로 보내는 장치 토큰. 비면 core가 장치 요청을 전부 401로 막으니 비어 있으면 아예 안 켠다
+      MSPACE_DEVICE_TOKEN: ${MSPACE_DEVICE_TOKEN:?.env에 MSPACE_DEVICE_TOKEN을 넣어 주세요 (openssl rand -hex 32)}
       TZ: Asia/Seoul
     depends_on:
       db:
