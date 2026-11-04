@@ -76,7 +76,13 @@ git pull --ff-only && $C run --rm --no-deps -T gateway nginx -t && $C up -d --no
 
 ## 되돌리기
 
-`.env.*`의 `CORE_TAG`(화면은 `WEB_TAG`, 비서는 `ASSISTANT_TAG`)를 이전 이미지(`sha-xxxxxxx`)로 바꾸고, 먼저 `$C run --rm --no-deps -T gateway nginx -t`로 입구 nginx 설정을 확인한 뒤 `$C up -d`.
+`.env.*`의 `CORE_TAG`(화면은 `WEB_TAG`, 비서는 `ASSISTANT_TAG`)를 이전 이미지(`sha-xxxxxxx`)로 바꾸고, 입구 nginx 설정을 먼저 확인한 뒤 다시 켠다.
+
+```bash
+T=dev   # 시연 서버는 T=prod
+C="docker compose -p mspace-$T --env-file .env.$T"
+$C run --rm --no-deps -T gateway nginx -t && $C up -d
+```
 
 ## 백업
 
