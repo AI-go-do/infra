@@ -40,9 +40,9 @@ services:
   core:
     image: ghcr.io/ai-go-do/mspace-core:${CORE_TAG:-develop}
     environment:
-      DB_URL: jdbc:postgresql://db:5432/${DB_NAME}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
+      DB_URL: jdbc:postgresql://db:5432/${DB_NAME:?.env에 DB_NAME을 넣어 주세요}
+      DB_USERNAME: ${DB_USERNAME:?.env에 DB_USERNAME을 넣어 주세요}
+      DB_PASSWORD: ${DB_PASSWORD:?.env에 DB_PASSWORD를 넣어 주세요 (openssl rand -hex 24)}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILE:-dev}
       # 키패드(게이트웨이)가 Authorization: Bearer 로 보내는 장치 토큰. 비면 core가 장치 요청을 전부 401로 막으니 비어 있으면 아예 안 켠다
       MSPACE_DEVICE_TOKEN: ${MSPACE_DEVICE_TOKEN:?.env에 MSPACE_DEVICE_TOKEN을 넣어 주세요 (openssl rand -hex 32)}
@@ -93,9 +93,9 @@ services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USERNAME}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:?.env에 DB_NAME을 넣어 주세요}
+      POSTGRES_USER: ${DB_USERNAME:?.env에 DB_USERNAME을 넣어 주세요}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?.env에 DB_PASSWORD를 넣어 주세요 (openssl rand -hex 24)}
       TZ: Asia/Seoul
     volumes:
       - db-data:/var/lib/postgresql/data   # 컨테이너를 다시 만들어도 데이터 유지
