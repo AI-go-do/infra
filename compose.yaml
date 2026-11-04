@@ -8,7 +8,7 @@ services:
   # 입구: API 게이트웨이(Spring Cloud Gateway, mspace-gateway 레포 이미지). 밖에서 열리는 포트는 이것 하나뿐
   # 로그인 토큰(JWT)을 여기서 먼저 확인하고, /api/agent/** → agent, /api/** → core, 나머지 → 화면(web)으로 보낸다
   gateway:
-    image: ghcr.io/ai-go-do/mspace-gateway:${GATEWAY_TAG:-develop}
+    image: ghcr.io/ai-go-do/mspace-gateway:${GATEWAY_TAG:?.env에 GATEWAY_TAG를 넣어 주세요 (개발 develop, 시연 main)}
     ports:
       # 개발 8411, 시연 8412 (재웅 포트 범위. 8410은 글결 블로그가 사용)
       # 127.0.0.1(서버 자신)에서만 받는다. 앞의 nginx(학교 서버)가 같은 서버에서 proxy_pass http://127.0.0.1:<포트>로 부르니
