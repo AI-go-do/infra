@@ -27,14 +27,14 @@ flowchart LR
 |---|---|---|
 | PR 올릴 때 | `ci.yml` (빌드·테스트, 레포마다 Sonar) | 실패하면 머지 버튼 막힘 |
 | develop·main에 머지될 때 | `deploy.yml`의 `image` job | 이미지 태그 `develop`/`main` + `sha-xxxxxxx` |
-| 그 다음 (서버 준비 후 켬) | `deploy.yml`의 `server` job | develop → 개발 서버(8411), main → 시연 서버(8412) |
+| 그 다음 (서버 준비 후 켬) | `deploy.yml`의 `server` job | develop → 개발 서버(8413), main → 시연 서버(8414) |
 
 서버 안에서는 이렇게 연결된다. 앞의 nginx(학교 서버, HTTPS)를 지나면 들어오는 문은 게이트웨이 하나뿐이다.
 
 ```mermaid
 flowchart LR
   U((사용자)) --> X[nginx<br/>학교 서버 · HTTPS]
-  X --> G[API 게이트웨이<br/>8411 개발 · 8412 시연<br/>JWT 확인]
+  X --> G[API 게이트웨이<br/>8413 개발 · 8414 시연<br/>JWT 확인]
   G -- / --> W[web<br/>PWA 화면]
   G -- /api --> C[core<br/>Spring Boot]
   G -- /api/agent --> AG[agent<br/>비서]
@@ -51,9 +51,9 @@ openssl rand -hex 32            # 장치 토큰. 개발·시연용을 따로 만
 # 같은 값을 그 서버를 부르는 키패드(게이트웨이) 장치의 .env에도 넣는다. 다르면 장치 요청이 401
 openssl rand -base64 48         # 로그인 토큰 서명값. 개발·시연용을 따로 만들어 JWT_SECRET에 넣는다. 비어 있으면 compose가 멈춘다
 # 이미 .env.dev/.env.prod가 있으면 WEB_TAG·GATEWAY_TAG 줄을 추가 (개발 develop, 시연 main). 없으면 compose가 멈추고 알려 준다
-docker compose -p mspace-dev  --env-file .env.dev  up -d    # 개발 (8411, develop 이미지)
-docker compose -p mspace-prod --env-file .env.prod up -d    # 시연 (8412, main 이미지)
-curl localhost:8411/actuator/health
+docker compose -p mspace-dev  --env-file .env.dev  up -d    # 개발 (8413, develop 이미지)
+docker compose -p mspace-prod --env-file .env.prod up -d    # 시연 (8414, main 이미지)
+curl localhost:8413/actuator/health      # 맥. 학교 서버는 curl 10.116.64.12:8413/actuator/health
 ```
 
 화면 이미지(`mspace-web`)는 mspace-web 레포의 `deploy.yml`이 develop·main에 머지될 때 GHCR에 올린다. 아직 그 태그가 GHCR에 없으면 `up`이 web을 받지 못해 멈추니, 그동안은 같은 이름으로 직접 빌드해 쓴다(compose는 로컬에 있는 이미지를 먼저 쓴다).
@@ -64,7 +64,7 @@ docker build -t ghcr.io/ai-go-do/mspace-web:develop ../mspace-web   # mspace-web
 
 ## 게이트웨이 포트와 설정 반영
 
-- gateway는 `127.0.0.1:${PORT}`(서버 안)에서만 받는다. 앞의 nginx(학교 서버)가 같은 서버에서 `proxy_pass http://127.0.0.1:<포트>`로 부르므로 정상 길은 그대로이고, 밖에서 `http://s2.java21.net:<포트>`로 HTTPS 없이 바로 들어오는 길은 막힌다. 서버에서 `ss -tlnp | grep 8411`이 `127.0.0.1:8411`로 나오면 맞다.
+- gateway는 기본 `127.0.0.1:${PORT}`(이 컴퓨터 안)에서만 받는다. 학교 서버에서는 Nginx 관리자가 `http://10.116.64.12:<포트>`로 부르므로 `.env.dev`·`.env.prod`에 `BIND_ADDR=10.116.64.12`를 넣는다. `0.0.0.0`은 쓰지 않는다(Docker가 연 포트는 ufw를 건너뛴다). 서버에서 `ss -tln | grep 841`이 `10.116.64.12:8413`으로 나오면 맞다.
 - 맥에서 같은 와이파이의 폰·키패드 노트북으로 시험할 때만 `.env.dev`에 `BIND_ADDR=0.0.0.0`. 서버에서는 넣지 않는다.
 - 길(어느 주소를 어디로)과 로그인 없이 여는 API 목록은 **mspace-gateway 레포**에 있다(`application.yml`, `PublicPaths.java`). 바꾸려면 그 레포에 PR → 머지되면 이미지가 새로 나오고 배포 때 바뀐다.
 - `JWT_SECRET`은 core와 게이트웨이가 같은 값을 쓴다(같은 `.env`에서 넘김). 다르면 로그인한 요청이 전부 401.
