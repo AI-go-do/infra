@@ -4,7 +4,7 @@ M-SPACE 서버 실행 설정 (담당: 재웅). 앱 코드는 각 저장소(mspac
 
 | 파일 | 하는 일 |
 |---|---|
-| `compose.yaml` | API 게이트웨이(mspace-gateway) → 화면(web)·core·agent, core → PostgreSQL, MCP는 안쪽에서만. 밖으로 열리는 포트는 게이트웨이 하나 |
+| `compose.yaml` | API 게이트웨이(mspace-gateway) → 화면(web)·core·agent, core → PostgreSQL, MCP·Redis(비서 대화 맥락)는 안쪽에서만. 밖으로 열리는 포트는 게이트웨이 하나 |
 | `scripts/backup.sh` | DB를 `backups/dev/`·`backups/prod/`에 날짜별로 백업, 7일 지난 건 삭제. 서버 cron으로 매일 실행 |
 | `.env.example` | 환경별 값 목록 (값은 비움). 실제 값은 `.env.dev` / `.env.prod`, 커밋 금지 |
 
@@ -40,8 +40,12 @@ flowchart LR
   G -- /api/agent --> AG[agent<br/>비서]
   C --> P[(PostgreSQL)]
   AG --> M[mcp<br/>도구 서버]
+  AG --> R[(Redis<br/>대화 맥락 24h · 시간표)]
+  M --> R
   M --> C
 ```
+
+- Redis에는 비서 대화 맥락(학생별 24시간 TTL)과 시간표(TTL 없음)를 둔다. AOF(`appendonly yes`) + `redis-data` 볼륨이라 컨테이너를 다시 만들어도 남는다. 예약 데이터는 PostgreSQL에만 있다. 메모리 64MB가 차면 TTL 있는 대화 키만 지우고 시간표는 지우지 않는다. 시간표는 `scripts/backup.sh` 대상이 아니다(학생이 다시 넣을 수 있는 데이터)
 
 ## 띄우기
 
