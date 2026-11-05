@@ -68,9 +68,14 @@ services:
     image: ghcr.io/ai-go-do/mspace-assistant-mcp:${ASSISTANT_TAG:-develop}
     environment:
       CORE_BASE_URL: http://core:8080      # 같은 compose 안이라 서비스 이름으로 찾는다
+      # 시간표 도구(my_schedule, 비서 #63)가 같은 Redis를 쓸 자리. 지금 mcp 이미지는 이 값을 읽지 않아서 넣어도 동작은 같다
+      MEMORY_STORE: ${MEMORY_STORE:-redis}
+      REDIS_URL: redis://redis:6379
       TZ: Asia/Seoul
     depends_on:
       core:
+        condition: service_started
+      redis:
         condition: service_started
     restart: unless-stopped
 
@@ -83,10 +88,28 @@ services:
       CORE_BASE_URL: http://core:8080
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}  # gemini / ollama
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # 대화 맥락을 학생별로 24시간 기억 (비서 #60·#61). redis: 아래 redis 컨테이너, memory: agent 메모리(재시작하면 사라짐)
+      # Redis가 죽어 있어도 agent는 기억 없이 답한다(경고 로그만). 되돌릴 때는 .env에 MEMORY_STORE=memory
+      MEMORY_STORE: ${MEMORY_STORE:-redis}
+      REDIS_URL: redis://redis:6379
       TZ: Asia/Seoul
     depends_on:
       mcp:
         condition: service_started
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  # 비서 대화 맥락 저장소 (Redis). 밖으로 포트를 열지 않는다 (agent·mcp만 안쪽에서 부른다)
+  # 대화는 24시간 TTL이라 잃어도 되는 데이터 → 볼륨 없음. 메모리 64MB를 넘으면 TTL이 짧은 키부터 지운다
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "volatile-ttl", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   # 데이터베이스 (밖으로 포트를 열지 않는다)
