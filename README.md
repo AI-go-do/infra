@@ -53,7 +53,8 @@ openssl rand -base64 48         # 로그인 토큰 서명값. 개발·시연용�
 # 이미 .env.dev/.env.prod가 있으면 WEB_TAG·GATEWAY_TAG 줄을 추가 (개발 develop, 시연 main). 없으면 compose가 멈추고 알려 준다
 docker compose -p mspace-dev  --env-file .env.dev  up -d    # 개발 (8413, develop 이미지)
 docker compose -p mspace-prod --env-file .env.prod up -d    # 시연 (8414, main 이미지)
-curl localhost:8413/actuator/health      # 맥. 학교 서버는 curl 10.116.64.12:8413/actuator/health
+curl localhost:8413/actuator/health      # 개발, 맥. 학교 서버는 curl 10.116.64.12:8413/actuator/health
+curl localhost:8414/actuator/health      # 시연, 맥. 학교 서버는 curl 10.116.64.12:8414/actuator/health
 ```
 
 화면 이미지(`mspace-web`)는 mspace-web 레포의 `deploy.yml`이 develop·main에 머지될 때 GHCR에 올린다. 아직 그 태그가 GHCR에 없으면 `up`이 web을 받지 못해 멈추니, 그동안은 같은 이름으로 직접 빌드해 쓴다(compose는 로컬에 있는 이미지를 먼저 쓴다).
