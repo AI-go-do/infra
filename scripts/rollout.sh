@@ -105,7 +105,7 @@ roll() {
     if [ -n "$ip" ] && healthy "$s" "$ip"; then echo "[$s] 새 컨테이너 준비됨 ($((SECONDS - start))초)"; break; fi
     if [ $((SECONDS - start)) -ge "$WAIT" ]; then
       echo "[$s] ${WAIT}초 안에 준비 안 됨: 새 것만 지우고 옛 것을 그대로 둔다"; docker logs --tail=50 "$new" || true
-      [ -n "$old" ] && { docker rm -f "$new" >/dev/null || true; }
+      docker rm -f "$new" >/dev/null || true       # 옛 것이 없어도 지운다. 준비 안 된 컨테이너가 edge 순번에 남지 않게
       exit 1
     fi
     sleep 1
