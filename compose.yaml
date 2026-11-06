@@ -5,35 +5,54 @@
 # (-p 프로젝트 이름이 다르면 컨테이너·DB 볼륨이 따로 생겨서 서로 안 섞인다)
 
 services:
-  # 입구: API 게이트웨이(Spring Cloud Gateway, mspace-gateway 레포 이미지). 밖에서 열리는 포트는 이것 하나뿐
-  # 로그인 토큰(JWT)을 여기서 먼저 확인하고, /api/agent/** → agent, /api/** → core, 나머지 → 화면(web)으로 보낸다
-  gateway:
-    image: ghcr.io/ai-go-do/mspace-gateway:${GATEWAY_TAG:?.env에 GATEWAY_TAG를 넣어 주세요 (개발 develop, 시연 main)}
+  # 입구 문(edge): 서버 포트를 잡고 있는 작은 nginx. 무중단 배포용 (edge/default.conf, README "무중단 배포")
+  # 뒤의 gateway·core·web을 바꾸는 동안에도 이 문은 계속 열려 있고, 요청을 살아 있는 컨테이너로 보낸다
+  # 학교 nginx → edge(8000) → gateway. 안쪽에서 core·web을 부를 때도 edge(8080·8081)를 지나 꺼지는 컨테이너를 피한다
+  edge:
+    image: nginx:1.28-alpine            # upstream "resolve"(이름을 계속 다시 찾기)가 1.27.3부터 무료판에 들어옴
     ports:
       # 개발 8413, 시연 8414 (재웅 포트 범위. 8410·8411은 글결 블로그, 8412는 블로그 Nginx 설정이 가리킴)
       # 기본은 127.0.0.1(이 컴퓨터 안에서만). 맥 로컬은 이대로 쓴다.
       # 학교 서버는 Nginx 관리자가 http://10.116.64.12:<포트>(서버의 학교 내부 주소)로 부르므로 .env에 BIND_ADDR=10.116.64.12.
       # 0.0.0.0은 쓰지 않는다 (Docker가 연 포트는 서버 방화벽 ufw를 건너뛰어 모든 주소로 열린다)
       # 맥에서 같은 와이파이의 폰·키패드 노트북으로 시험할 때만 .env에 BIND_ADDR=0.0.0.0
-      # 8000만 연다. 게이트웨이 자기 health(8001)는 열지 않는다
+      # 8000만 연다. 안쪽용 8080·8081·8099는 열지 않는다
       - "${BIND_ADDR:-127.0.0.1}:${PORT}:8000"
+    volumes:
+      # 파일 하나가 아니라 폴더째 연결: git pull로 파일이 바뀌어도 컨테이너가 새 파일을 보고, nginx -s reload만으로 반영된다
+      - ./edge:/etc/nginx/conf.d:ro
+    environment:
+      TZ: Asia/Seoul
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  # API 게이트웨이(Spring Cloud Gateway, mspace-gateway 레포 이미지). 밖에서는 edge를 통해서만 들어온다
+  # 로그인 토큰(JWT)을 여기서 먼저 확인하고, /api/agent/** → agent, /api/** → core, 나머지 → 화면(web)으로 보낸다
+  # 포트를 열지 않아서 scripts/rollout.sh가 두 개를 잠깐 같이 띄울 수 있다(무중단 교체)
+  gateway:
+    image: ghcr.io/ai-go-do/mspace-gateway:${GATEWAY_TAG:?.env에 GATEWAY_TAG를 넣어 주세요 (개발 develop, 시연 main)}
     environment:
       # core와 같은 값이어야 core가 준 토큰을 확인할 수 있다 (같은 .env의 JWT_SECRET을 그대로 넘긴다)
       JWT_SECRET: ${JWT_SECRET:?.env에 JWT_SECRET을 넣어 주세요 (openssl rand -base64 48)}
-      CORE_URI: http://core:8080
+      # core·web은 edge를 지나서 부른다: 교체 중 꺼지는 컨테이너를 edge가 피해 준다
+      CORE_URI: http://edge:8080
       AGENT_URI: http://agent:8091
-      WEB_URI: http://web:80
+      WEB_URI: http://edge:8081
       TZ: Asia/Seoul
     depends_on:
+      edge:
+        condition: service_started
       core:
         condition: service_started
       web:
         condition: service_started
+    stop_grace_period: 40s              # 끌 때 하던 요청을 마칠 시간 (Spring Boot graceful 30초 + 여유)
     restart: unless-stopped
 
   # 화면(PWA): 빌드한 정적 파일을 내는 컨테이너 (mspace-web 레포 이미지). 밖으로 열지 않고 gateway를 통해서만
   web:
     image: ghcr.io/ai-go-do/mspace-web:${WEB_TAG:?.env에 WEB_TAG를 넣어 주세요 (개발 develop, 시연 main)}
+    stop_grace_period: 30s
     restart: unless-stopped
 
   # 예약 코어 (GitHub Actions가 GHCR에 올린 이미지)
@@ -58,6 +77,7 @@ services:
     depends_on:
       db:
         condition: service_healthy         # DB가 준비된 뒤에 켠다 (Flyway가 바로 붙으니까)
+    stop_grace_period: 40s                 # 끌 때 하던 요청을 마칠 시간 (Spring Boot graceful 30초 + 여유)
     restart: unless-stopped
     # 포트를 열지 않는다: gateway를 통해서만 들어온다
 
@@ -67,13 +87,15 @@ services:
   mcp:
     image: ghcr.io/ai-go-do/mspace-assistant-mcp:${ASSISTANT_TAG:-develop}
     environment:
-      CORE_BASE_URL: http://core:8080      # 같은 compose 안이라 서비스 이름으로 찾는다
+      CORE_BASE_URL: http://edge:8080      # edge를 지나 core로 (core 교체 중에도 살아 있는 쪽으로)
       # 시간표(my_schedule, 비서 #63·#67)를 Redis에 둔다. memory면 mcp 메모리(재시작하면 사라짐)
       SCHEDULE_STORE: ${SCHEDULE_STORE:-redis}
       # 비밀번호는 .env의 REDIS_PASSWORD (URL에 넣으므로 openssl rand -hex 32처럼 영문·숫자만)
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       TZ: Asia/Seoul
     depends_on:
+      edge:
+        condition: service_started
       core:
         condition: service_started
       redis:
@@ -86,7 +108,7 @@ services:
     image: ghcr.io/ai-go-do/mspace-assistant-agent:${ASSISTANT_TAG:-develop}
     environment:
       MCP_SERVER_URL: http://mcp:8090
-      CORE_BASE_URL: http://core:8080
+      CORE_BASE_URL: http://edge:8080      # edge를 지나 core로
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}  # gemini / ollama
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # 대화 맥락을 학생별로 24시간 기억 (비서 #60·#61). redis: 아래 redis 컨테이너, memory: agent 메모리(재시작하면 사라짐)
