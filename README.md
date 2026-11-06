@@ -4,7 +4,9 @@ M-SPACE 서버 실행 설정 (담당: 재웅). 앱 코드는 각 저장소(mspac
 
 | 파일 | 하는 일 |
 |---|---|
-| `compose.yaml` | API 게이트웨이(mspace-gateway) → 화면(web)·core·agent, core → PostgreSQL, MCP·Redis(비서 대화 맥락)는 안쪽에서만. 밖으로 열리는 포트는 게이트웨이 하나 |
+| `compose.yaml` | 입구 문(edge) → API 게이트웨이(mspace-gateway) → 화면(web)·core·agent, core → PostgreSQL, MCP·Redis(비서 대화 맥락)는 안쪽에서만. 밖으로 열리는 포트는 edge 하나 |
+| `edge/default.conf` | 입구 문 nginx 설정. 교체 중인 컨테이너를 피해 살아 있는 쪽으로 보낸다 (아래 "무중단 배포") |
+| `scripts/rollout.sh` | 무중단 교체: 새 컨테이너를 옆에 띄워 확인 → 옛 것을 끈다. 각 레포 `deploy.yml`이 부른다 |
 | `scripts/backup.sh` | DB를 `backups/dev/`·`backups/prod/`에 날짜별로 백업, 7일 지난 건 삭제. 서버 cron으로 매일 실행 |
 | `.env.example` | 환경별 값 목록 (값은 비움). 실제 값은 `.env.dev` / `.env.prod`, 커밋 금지 |
 
@@ -34,7 +36,8 @@ flowchart LR
 ```mermaid
 flowchart LR
   U((사용자)) --> X[nginx<br/>학교 서버 · HTTPS]
-  X --> G[API 게이트웨이<br/>8413 개발 · 8414 시연<br/>JWT 확인]
+  X --> E[edge 입구 문<br/>8413 개발 · 8414 시연]
+  E --> G[API 게이트웨이<br/>JWT 확인]
   G -- / --> W[web<br/>PWA 화면]
   G -- /api --> C[core<br/>Spring Boot]
   G -- /api/agent --> AG[agent<br/>비서]
@@ -70,17 +73,49 @@ docker build -t ghcr.io/ai-go-do/mspace-web:develop ../mspace-web   # mspace-web
 
 ## 게이트웨이 포트와 설정 반영
 
-- gateway는 기본 `127.0.0.1:${PORT}`(이 컴퓨터 안)에서만 받는다. 학교 서버에서는 Nginx 관리자가 `http://10.116.64.12:<포트>`로 부르므로 `.env.dev`·`.env.prod`에 `BIND_ADDR=10.116.64.12`를 넣는다. `0.0.0.0`은 쓰지 않는다(Docker가 연 포트는 ufw를 건너뛴다). 서버에서 `ss -tln | grep 841`이 `10.116.64.12:8413`으로 나오면 맞다.
+- 서버 포트는 gateway가 아니라 입구 문 **edge**가 잡는다(무중단 배포 때문). edge는 기본 `127.0.0.1:${PORT}`(이 컴퓨터 안)에서만 받는다. 학교 서버에서는 Nginx 관리자가 `http://10.116.64.12:<포트>`로 부르므로 `.env.dev`·`.env.prod`에 `BIND_ADDR=10.116.64.12`를 넣는다. `0.0.0.0`은 쓰지 않는다(Docker가 연 포트는 ufw를 건너뛴다). 서버에서 `ss -tln | grep 841`이 `10.116.64.12:8413`으로 나오면 맞다.
 - 맥에서 같은 와이파이의 폰·키패드 노트북으로 시험할 때만 `.env.dev`에 `BIND_ADDR=0.0.0.0`. 서버에서는 넣지 않는다.
 - 길(어느 주소를 어디로)과 로그인 없이 여는 API 목록은 **mspace-gateway 레포**에 있다(`application.yml`, `PublicPaths.java`). 바꾸려면 그 레포에 PR → 머지되면 이미지가 새로 나오고 배포 때 바뀐다.
 - `JWT_SECRET`은 core와 게이트웨이가 같은 값을 쓴다(같은 `.env`에서 넘김). 다르면 로그인한 요청이 전부 401.
-- 게이트웨이 이미지를 바로 바꾸려면 서버에서:
+- 게이트웨이 이미지를 바로 바꾸려면 서버에서 (끊김 없이):
 
 ```bash
 T=dev   # 시연 서버는 T=prod
 C="docker compose -p mspace-$T --env-file .env.$T"
-git pull --ff-only && $C config -q && $C pull gateway && $C up -d --no-deps gateway
+git pull --ff-only && $C config -q && $C pull gateway && scripts/rollout.sh $T gateway
 ```
+
+## 무중단 배포
+
+배포할 때 화면·API가 끊기지 않게 한다. 학교 nginx는 그대로 두고 compose 안에서만 해결한다.
+
+```mermaid
+flowchart LR
+  X[학교 nginx] --> E[edge<br/>포트를 계속 잡고 있음]
+  E --> O[옛 core<br/>하던 요청 마치고 내려감]
+  E --> N[새 core<br/>health UP 확인 뒤 받기 시작]
+```
+
+| 단계 | `scripts/rollout.sh dev core` 가 하는 일 |
+|---|---|
+| 1 | 이미지·설정이 그대로면 건너뛴다 (compose `config --hash`와 이미지 ID 비교) |
+| 2 | 옛 컨테이너는 둔 채 새 컨테이너를 하나 더 띄운다 (`--scale core=2 --no-recreate`) |
+| 3 | 새 컨테이너 health를 edge 안에서 직접 부른다 (core 최대 180초). **실패하면 새 것만 지우고 멈춘다 → 옛 것이 계속 서비스** |
+| 4 | 5초 기다린 뒤(edge가 새 컨테이너를 찾을 시간) 옛 것을 SIGTERM으로 끈다. Spring Boot·nginx가 하던 요청을 마치고 내려간다 |
+
+- **edge**(`nginx:1.28-alpine`, 메모리 수 MB)가 서버 포트를 계속 잡고, 뒤 서비스 이름을 2초마다 다시 찾는다(`resolve`). 꺼지는 컨테이너에 연결이 안 되면 다른 컨테이너로 다시 보낸다(`proxy_next_upstream`, POST는 아직 안 보냈을 때만)
+- gateway·mcp·agent가 core를 부를 때도 edge(`edge:8080`)를 지난다. 그래서 core가 바뀌는 동안 안쪽 호출도 안 끊긴다
+- 무중단 대상: **core, gateway, web**. mcp·agent는 확인 토큰·채팅 작업을 메모리에 들고 있어 두 개를 같이 띄우면 섞인다 → 지금처럼 다시 만든다(비서만 잠깐 끊김). Redis로 옮기면 같이 무중단 가능 (비서 담당과 상의)
+- `edge/default.conf`만 바꾸면 edge를 다시 만들지 않고 `nginx -s reload`로 반영한다(rollout.sh가 매번 문법 확인 후 reload)
+- 처음 한 번은 서버 포트를 옛 gateway에서 edge로 옮긴다. 새 gateway를 먼저 띄워 확인 → 옛 gateway 끄기 → edge 시작이라 끊김은 몇 초
+
+**팀이 지켜야 할 것**
+
+- **DB 마이그레이션은 "추가만" 먼저.** 교체하는 동안 옛 core와 새 core가 같은 DB를 잠깐 같이 쓴다. 컬럼 이름 바꾸기·지우기는 한 번에 하지 말고 ① 새 컬럼 추가 배포 → ② 다음 배포에서 옛 컬럼 삭제
+- 스케줄러(자동 퇴실·노쇼·알림)가 몇 초 동안 두 core에서 같이 돈다. 지금 코드는 `ON CONFLICT DO NOTHING`·상태 조건으로 한 번만 처리돼서 괜찮다. 새 스케줄러를 만들 때도 두 번 돌아도 같은 결과가 나오게
+- 교체하는 동안 core JVM이 잠깐 두 개라 메모리를 더 쓴다. 배포는 서버에서 한 번에 하나씩만 돈다(flock)
+
+**시험 결과 (11/6, 가짜 서비스로)**: 옛 배치(gateway가 포트를 잡던 상태)에서 edge로 옮기기 → 끊김 약 2초(처음 한 번). 그 뒤 core·gateway·web 교체 중 0.1초마다 보낸 GET·POST·화면 요청 1,401건·690건 모두 200. 새 core가 켜지자마자 죽게 만들면 rollout이 실패로 끝나고 옛 core가 계속 응답(285건 모두 200). 실제 서버 시험은 확인 필요.
 
 ## 되돌리기
 
@@ -89,7 +124,7 @@ git pull --ff-only && $C config -q && $C pull gateway && $C up -d --no-deps gate
 ```bash
 T=dev   # 시연 서버는 T=prod
 C="docker compose -p mspace-$T --env-file .env.$T"
-$C config -q && $C up -d
+$C config -q && scripts/rollout.sh $T core web gateway   # 끊김 없이. 비서는 $C up -d --no-deps mcp agent
 ```
 
 ## 백업
