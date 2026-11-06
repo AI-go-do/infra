@@ -55,6 +55,7 @@ running() { "${C[@]}" ps -q --status running "$1"; }
 changed() {
   local s="$1" want_hash c ref
   [ "${FORCE:-}" = 1 ] && return 0
+  [ -n "$(running "$s")" ] || return 0             # 떠 있는 게 없으면(멈춰 있음) 바뀐 것으로 보고 띄운다
   want_hash=$("${C[@]}" config --hash "$s" | awk '{print $2}')
   for c in $(running "$s"); do
     [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.config-hash"}}' "$c")" = "$want_hash" ] || return 0
