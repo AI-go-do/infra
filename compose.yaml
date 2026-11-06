@@ -70,7 +70,8 @@ services:
       CORE_BASE_URL: http://core:8080      # 같은 compose 안이라 서비스 이름으로 찾는다
       # 시간표(my_schedule, 비서 #63·#67)를 Redis에 둔다. memory면 mcp 메모리(재시작하면 사라짐)
       SCHEDULE_STORE: ${SCHEDULE_STORE:-redis}
-      REDIS_URL: redis://redis:6379
+      # 비밀번호는 .env의 REDIS_PASSWORD (URL에 넣으므로 openssl rand -hex 32처럼 영문·숫자만)
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       TZ: Asia/Seoul
     depends_on:
       core:
@@ -91,7 +92,8 @@ services:
       # 대화 맥락을 학생별로 24시간 기억 (비서 #60·#61). redis: 아래 redis 컨테이너, memory: agent 메모리(재시작하면 사라짐)
       # Redis가 죽어 있어도 agent는 기억 없이 답한다(경고 로그만). 되돌릴 때는 .env에 MEMORY_STORE=memory
       MEMORY_STORE: ${MEMORY_STORE:-redis}
-      REDIS_URL: redis://redis:6379
+      # 비밀번호는 .env의 REDIS_PASSWORD (URL에 넣으므로 openssl rand -hex 32처럼 영문·숫자만)
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       TZ: Asia/Seoul
     depends_on:
       mcp:
@@ -107,9 +109,12 @@ services:
   # (시간표만으로 64MB가 차면 쓰기가 OOM 오류로 거절된다. 학생당 1KB 안쪽이라 수만 명 수준이어야 닿는다)
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "volatile-ttl", "--appendonly", "yes", "--appendfsync", "everysec", "--save", ""]
+    # 비밀번호(requirepass): 포트는 안 열지만, 같은 네트워크의 다른 컨테이너가 뚫려도 대화·시간표를 바로 못 읽게 한다
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?.env에 REDIS_PASSWORD를 넣어 주세요 (openssl rand -hex 32)}", "--maxmemory", "64mb", "--maxmemory-policy", "volatile-ttl", "--appendonly", "yes", "--appendfsync", "everysec", "--save", ""]
     volumes:
       - redis-data:/data                   # AOF 파일. 컨테이너를 다시 만들어도 시간표 유지
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}     # healthcheck의 redis-cli가 이 값으로 로그인 (명령줄에 비밀번호를 안 남김)
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
