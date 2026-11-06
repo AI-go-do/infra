@@ -65,6 +65,13 @@ changed() {
   return 1
 }
 
+# 배포끼리 겹치지 않게 deploy.yml과 같은 잠금을 쓴다. deploy.yml이 이미 잡았으면(9번 파일을 물려받음) 그대로 통과,
+# 서버에서 손으로 돌릴 때는 여기서 잡는다. 두 rollout이 같은 옛 컨테이너를 지우려다 하나가 실패하는 일을 막는다
+if [ -e /proc/self/fd/9 ] && flock -n 9 2>/dev/null; then :; else
+  exec 9>"$HOME/.mspace-deploy.lock"
+  flock -w 300 9 || { echo "다른 배포가 5분 넘게 끝나지 않음"; exit 1; }
+fi
+
 NET="mspace-${T}_default"
 EDGE_IMAGE=$("${C[@]}" config --images edge | head -n 1)
 docker image inspect "$EDGE_IMAGE" >/dev/null 2>&1 || "${C[@]}" pull -q edge
@@ -115,16 +122,28 @@ roll() {
   done
 }
 
+edge_ok() { for i in $(seq 1 15); do "${C[@]}" exec -T edge wget -qO- -T 2 http://127.0.0.1:8099/edge-health >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
+edge_fail() {
+  echo "edge가 뜨지 않음: 서버 포트가 비었을 수 있다. '${C[*]} logs edge'로 원인 확인"
+  echo "급하면 옛 방식으로 되돌리기: git log --oneline -5 로 edge 넣기 전 커밋을 찾아 'git checkout <커밋> -- compose.yaml && ${C[*]} up -d --no-deps gateway' 뒤, 고치고 나서 'git checkout main -- compose.yaml'"
+  exit 1
+}
+
 # 0) 입구 edge 준비
+# edge를 건드리기 전에 새 설정을 잠깐 띄운 컨테이너로 먼저 검사한다. 틀린 설정으로 edge를 다시 만들면 nginx가 안 떠서 포트가 비기 때문
+docker run --rm --network "$NET" -v "$PWD/edge:/etc/nginx/conf.d:ro" "$EDGE_IMAGE" nginx -t -q \
+  || { echo "edge/default.conf 검사 실패: 아무것도 바꾸지 않고 멈춘다"; exit 1; }
 if [ -z "$(running edge)" ]; then
   # 처음 한 번: 서버 포트를 옛 gateway에서 edge로 옮긴다.
   # 새 gateway(포트 없음)를 먼저 띄워 확인 → 옛 gateway를 끄면 포트가 풀림 → 바로 edge가 잡는다. 끊김은 그 사이 몇 초
   echo "edge가 없음: 서버 포트를 gateway에서 edge로 옮긴다 (처음 한 번)"
   FORCE=1 roll gateway
-  "${C[@]}" up -d --no-deps edge
+  "${C[@]}" up -d --no-deps edge || edge_fail
 fi
-"${C[@]}" up -d --no-deps edge                  # edge의 compose 설정이 바뀌었을 때만 다시 만든다
-for i in $(seq 1 10); do "${C[@]}" exec -T edge wget -qO- -T 2 http://127.0.0.1:8099/edge-health >/dev/null 2>&1 && break; sleep 1; done
+# edge의 compose 설정(이미지 태그·포트 등)이 바뀌었을 때만 다시 만든다. 이때는 포트를 넘겨받을 수 없어 1~2초 끊긴다(드묾).
+# 설정 파일(default.conf)만 바뀐 건 아래 reload로 끊김 없이 반영한다
+"${C[@]}" up -d --no-deps edge || edge_fail
+edge_ok || edge_fail
 "${C[@]}" exec -T edge nginx -t -q                # edge/default.conf 문법 확인. 틀리면 여기서 멈춘다(지금 설정 그대로)
 "${C[@]}" exec -T edge nginx -s reload            # 바뀐 설정 반영. 끊기지 않는다
 
