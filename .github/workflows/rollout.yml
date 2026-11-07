@@ -90,7 +90,7 @@ jobs:
           check || { echo "compose 설정 오류: infra를 받기 전 커밋으로 되돌림"; git reset -q --hard "$OLD"; exit 1; }
           FORCE="$F" scripts/rollout.sh "$T" "$@" </dev/null      # 안쪽 docker 명령이 남은 원격 스크립트(표준 입력)를 먹지 않게
           # 입구(edge)를 지나 gateway → core health까지 확인. 주소는 .env를 직접 읽지 않고 compose가 실제로 연 포트에서 얻는다
-          HP=$($C port edge 8000 </dev/null | head -n 1)
+          HP=$($C port edge 8000 </dev/null | head -n 1) || HP=""   # 실패해도 아래에서 이유를 찍고 멈추게
           [ -n "$HP" ] || { echo "edge가 연 서버 포트를 찾지 못함"; exit 1; }
           case "$HP" in 0.0.0.0:*) HP="127.0.0.1:${HP#*:}" ;; esac
           for i in $(seq 1 30); do
