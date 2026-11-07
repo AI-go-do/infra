@@ -91,13 +91,12 @@ jobs:
           git pull --ff-only
           check || { echo "compose 설정 오류: infra를 이전 커밋으로 되돌림"; git reset -q --hard "$OLD"; exit 1; }
           FORCE="$F" scripts/rollout.sh "$T" "$@" </dev/null      # 안쪽 docker 명령이 남은 원격 스크립트(표준 입력)를 먹지 않게
-          git rev-parse HEAD > "$GOOD"                         # 설정 검사와 교체가 모두 끝난 커밋만 기록
           # 입구(edge)를 지나 gateway → core health까지 확인
           PORT=$(grep -E '^PORT=' ".env.$T" | tail -n 1 | cut -d= -f2- | tr -d "\"' \r")
           ADDR=$( (grep -E '^BIND_ADDR=' ".env.$T" || true) | tail -n 1 | cut -d= -f2- | tr -d "\"' \r"); case "$ADDR" in ""|0.0.0.0) ADDR=127.0.0.1;; esac
           [[ "$PORT" =~ ^[0-9]+$ ]] || { echo ".env.$T의 PORT 값이 숫자가 아님"; exit 1; }
           for i in $(seq 1 30); do
-            curl -fsS --max-time 5 "$ADDR:$PORT/actuator/health" | grep -q '"status":"UP"' && { echo "입구 health 확인 ($T)"; exit 0; }
+            curl -fsS --max-time 5 "$ADDR:$PORT/actuator/health" | grep -q '"status":"UP"' && { git rev-parse HEAD > "$GOOD"; echo "입구 health 확인 ($T)"; exit 0; }   # 교체·health까지 끝난 커밋만 기록
             sleep 2
           done
           echo "입구 health 확인 실패"; exit 1
