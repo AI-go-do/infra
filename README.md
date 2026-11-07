@@ -7,6 +7,7 @@ M-SPACE 서버 실행 설정 (담당: 재웅). 앱 코드는 각 저장소(mspac
 | `compose.yaml` | 입구 문(edge) → API 게이트웨이(mspace-gateway) → 화면(web)·core·agent, core → PostgreSQL, MCP·Redis(비서 대화 맥락)는 안쪽에서만. 밖으로 열리는 포트는 edge 하나 |
 | `edge/default.conf` | 입구 문 nginx 설정. 교체 중인 컨테이너를 피해 살아 있는 쪽으로 보낸다 (아래 "무중단 배포") |
 | `scripts/rollout.sh` | 무중단 교체: 새 컨테이너를 옆에 띄워 확인 → 옛 것을 끈다. 각 레포 `deploy.yml`이 부른다 |
+| `.github/workflows/rollout.yml` | 서버 터미널 없이 무중단 교체를 손으로 돌린다 (Actions → "무중단 교체" → Run workflow) |
 | `scripts/backup.sh` | DB를 `backups/dev/`·`backups/prod/`에 날짜별로 백업, 7일 지난 건 삭제. 서버 cron으로 매일 실행 |
 | `.env.example` | 환경별 값 목록 (값은 비움). 실제 값은 `.env.dev` / `.env.prod`, 커밋 금지 |
 
@@ -108,6 +109,7 @@ flowchart LR
 - 무중단 대상: **core, gateway, web**. mcp·agent는 확인 토큰·채팅 작업을 메모리에 들고 있어 두 개를 같이 띄우면 섞인다 → 지금처럼 다시 만든다(비서만 잠깐 끊김). Redis로 옮기면 같이 무중단 가능 (비서 담당과 상의)
 - `edge/default.conf`만 바꾸면 edge를 다시 만들지 않고 `nginx -s reload`로 반영한다(rollout.sh가 매번 문법 확인 후 reload)
 - 처음 한 번은 서버 포트를 옛 gateway에서 edge로 옮긴다. 새 gateway를 먼저 띄워 확인 → 옛 gateway 끄기 → edge 시작이라 끊김은 몇 초
+- 서버 터미널에 들어갈 수 없으면 GitHub Actions의 **"무중단 교체"** 워크플로(main에서 Run workflow)로 같은 일을 한다. 환경(prod/dev)·서비스(`core gateway web`)·재시작 여부를 고르면 앱 배포와 같은 Secrets로 서버에 들어가 `git pull` → `scripts/rollout.sh`를 돌리고 입구 health까지 확인한다
 
 **팀이 지켜야 할 것**
 

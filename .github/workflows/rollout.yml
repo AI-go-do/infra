@@ -1,0 +1,100 @@
+# 서버 터미널 없이 무중단 교체(scripts/rollout.sh)를 돌린다.
+#   Actions 탭 → "무중단 교체" → Run workflow → 환경(dev/prod)과 서비스(core gateway web) 고르기
+# 쓰는 때: 처음 edge로 옮길 때(prod gateway), 같은 이미지로 다시 띄울 때(FORCE), 서버에 손으로 들어가기 어려울 때
+# 비밀값은 앱 배포와 같은 org Secrets(DEPLOY_HOST·DEPLOY_PORT·DEPLOY_USER·DEPLOY_SSH_KEY·DEPLOY_KNOWN_HOSTS)를 쓴다
+name: 무중단 교체
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "환경"
+        type: choice
+        options: [prod, dev]
+        default: prod
+      services:
+        description: "바꿀 서비스 (core gateway web 중에서 띄어 쓰기)"
+        type: string
+        default: gateway
+      force:
+        description: "바뀐 게 없어도 새로 띄우기 (재시작)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rollout-${{ inputs.target }}
+  cancel-in-progress: false            # 교체 도중에 끊지 않는다
+
+jobs:
+  rollout:
+    # 서버 ~/infra는 main을 쓴다. 다른 브랜치에서 손으로 돌려도 서버를 건드리지 않게
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 입력 확인
+        env:
+          SERVICES: ${{ inputs.services }}
+        run: |
+          # 서비스 이름은 서버 명령에 들어가므로 정해진 것만 받는다
+          [ -n "$SERVICES" ] || { echo "서비스를 적어 주세요"; exit 1; }
+          for s in $SERVICES; do
+            case "$s" in core|gateway|web) ;; *) echo "무중단 대상이 아님: $s (core gateway web만)"; exit 1 ;; esac
+          done
+
+      - name: SSH 키 준비
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          [ -n "$SSH_KEY" ] && [ -n "$KNOWN_HOSTS" ] || { echo "DEPLOY_* Secrets를 이 레포에서 볼 수 없음: org Secrets 설정에서 infra 레포를 허용 목록에 넣어 주세요"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts   # 처음 보는 서버면 접속을 거부한다 (가짜 서버 방지)
+
+      - name: 서버에서 무중단 교체
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+          TARGET: ${{ inputs.target }}
+          SERVICES: ${{ inputs.services }}
+          FORCE: ${{ inputs.force && '1' || '0' }}   # 빈 값은 ssh가 인자를 빼 버려서 0으로
+        run: |
+          # shellcheck disable=SC2086  # 서비스 목록은 띄어 쓰기로 나눠 넘긴다(위에서 이름 확인함)
+          ssh -i ~/.ssh/id_deploy -p "$PORT" -o BatchMode=yes "$SSH_USER@$HOST" bash -s -- "$TARGET" "$FORCE" $SERVICES <<'REMOTE'
+          set -euo pipefail
+          T="$1"; F="$2"; shift 2
+          # 앱 배포(deploy.yml)와 같은 잠금. rollout.sh는 물려받은 잠금(9번)을 그대로 쓴다
+          exec 9>"$HOME/.mspace-deploy.lock"
+          flock -w 300 9 || { echo "다른 배포가 5분 넘게 끝나지 않음"; exit 1; }
+          cd ~/infra
+          # 앱 배포와 같은 안전장치: 손으로 고친 파일이 있거나 main이 아니면 멈춘다
+          STATUS=$(git status --porcelain) || { echo "git status 실패"; exit 1; }
+          [ -z "$STATUS" ] || { echo "~/infra에 커밋 안 된 수정·새 파일이 있음: 멈춤"; git status --short; exit 1; }
+          [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || { echo "~/infra가 main 브랜치가 아님: 멈춤"; exit 1; }
+          GOOD="$HOME/.mspace-infra-good"
+          check() { [ -f ".env.$T" ] || { echo ".env.$T 파일이 없음"; return 1; }; for E in dev prod; do [ -f ".env.$E" ] || continue; docker compose -p "mspace-$E" --env-file ".env.$E" config -q || return 1; done; }
+          if [ ! -s "$GOOD" ]; then
+            check || { echo "지금 ~/infra의 compose 설정부터 틀림: 멈춤"; exit 1; }
+            git rev-parse HEAD > "$GOOD"
+          fi
+          OLD=$(cat "$GOOD")
+          git merge-base --is-ancestor "$OLD" HEAD || { echo "기록된 검사 통과 커밋($OLD)이 main에 없음: 멈춤"; exit 1; }
+          git pull --ff-only
+          check || { echo "compose 설정 오류: infra를 이전 커밋으로 되돌림"; git reset -q --hard "$OLD"; exit 1; }
+          git rev-parse HEAD > "$GOOD"
+          FORCE="$F" scripts/rollout.sh "$T" "$@"
+          # 입구(edge)를 지나 gateway → core health까지 확인
+          PORT=$(grep -E '^PORT=' ".env.$T" | tail -n 1 | cut -d= -f2- | tr -d "\"' \r")
+          ADDR=$( (grep -E '^BIND_ADDR=' ".env.$T" || true) | tail -n 1 | cut -d= -f2- | tr -d "\"' \r"); case "$ADDR" in ""|0.0.0.0) ADDR=127.0.0.1;; esac
+          [[ "$PORT" =~ ^[0-9]+$ ]] || { echo ".env.$T의 PORT 값이 숫자가 아님"; exit 1; }
+          for i in $(seq 1 30); do
+            curl -fsS --max-time 5 "$ADDR:$PORT/actuator/health" | grep -q UP && { echo "입구 health 확인 ($T)"; exit 0; }
+            sleep 2
+          done
+          echo "입구 health 확인 실패"; exit 1
+          REMOTE
