@@ -90,7 +90,7 @@ jobs:
           git merge-base --is-ancestor "$OLD" HEAD || { echo "기록된 검사 통과 커밋($OLD)이 main에 없음: 멈춤"; exit 1; }
           git pull --ff-only
           check || { echo "compose 설정 오류: infra를 이전 커밋으로 되돌림"; git reset -q --hard "$OLD"; exit 1; }
-          FORCE="$F" scripts/rollout.sh "$T" "$@"
+          FORCE="$F" scripts/rollout.sh "$T" "$@" </dev/null      # 안쪽 docker 명령이 남은 원격 스크립트(표준 입력)를 먹지 않게
           git rev-parse HEAD > "$GOOD"                         # 설정 검사와 교체가 모두 끝난 커밋만 기록
           # 입구(edge)를 지나 gateway → core health까지 확인
           PORT=$(grep -E '^PORT=' ".env.$T" | tail -n 1 | cut -d= -f2- | tr -d "\"' \r")
