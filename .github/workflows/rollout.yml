@@ -49,8 +49,12 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          [ -n "$SSH_KEY" ] && [ -n "$KNOWN_HOSTS" ] || { echo "DEPLOY_* Secrets를 이 레포에서 볼 수 없음: org Secrets 설정에서 infra 레포를 허용 목록에 넣어 주세요"; exit 1; }
+          # 다섯 개 다 있어야 접속할 수 있다. 하나라도 비면 ssh의 알 수 없는 오류 대신 이유를 알려 준다
+          [ -n "$SSH_KEY" ] && [ -n "$KNOWN_HOSTS" ] && [ -n "$HOST" ] && [ -n "$PORT" ] && [ -n "$SSH_USER" ] || { echo "DEPLOY_* Secrets를 이 레포에서 볼 수 없음: org Secrets 설정에서 infra 레포를 허용 목록에 넣어 주세요"; exit 1; }
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts   # 처음 보는 서버면 접속을 거부한다 (가짜 서버 방지)
@@ -86,14 +90,14 @@ jobs:
           git merge-base --is-ancestor "$OLD" HEAD || { echo "기록된 검사 통과 커밋($OLD)이 main에 없음: 멈춤"; exit 1; }
           git pull --ff-only
           check || { echo "compose 설정 오류: infra를 이전 커밋으로 되돌림"; git reset -q --hard "$OLD"; exit 1; }
-          git rev-parse HEAD > "$GOOD"
           FORCE="$F" scripts/rollout.sh "$T" "$@"
+          git rev-parse HEAD > "$GOOD"                         # 설정 검사와 교체가 모두 끝난 커밋만 기록
           # 입구(edge)를 지나 gateway → core health까지 확인
           PORT=$(grep -E '^PORT=' ".env.$T" | tail -n 1 | cut -d= -f2- | tr -d "\"' \r")
           ADDR=$( (grep -E '^BIND_ADDR=' ".env.$T" || true) | tail -n 1 | cut -d= -f2- | tr -d "\"' \r"); case "$ADDR" in ""|0.0.0.0) ADDR=127.0.0.1;; esac
           [[ "$PORT" =~ ^[0-9]+$ ]] || { echo ".env.$T의 PORT 값이 숫자가 아님"; exit 1; }
           for i in $(seq 1 30); do
-            curl -fsS --max-time 5 "$ADDR:$PORT/actuator/health" | grep -q UP && { echo "입구 health 확인 ($T)"; exit 0; }
+            curl -fsS --max-time 5 "$ADDR:$PORT/actuator/health" | grep -q '"status":"UP"' && { echo "입구 health 확인 ($T)"; exit 0; }
             sleep 2
           done
           echo "입구 health 확인 실패"; exit 1
