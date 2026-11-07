@@ -80,23 +80,21 @@ jobs:
           STATUS=$(git status --porcelain) || { echo "git status 실패"; exit 1; }
           [ -z "$STATUS" ] || { echo "~/infra에 커밋 안 된 수정·새 파일이 있음: 멈춤"; git status --short; exit 1; }
           [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || { echo "~/infra가 main 브랜치가 아님: 멈춤"; exit 1; }
-          GOOD="$HOME/.mspace-infra-good"
+          GOOD="$HOME/.mspace-infra-good"           # 앱 배포(deploy.yml)도 쓰는 "검사 통과 커밋" 기록
+          C="docker compose -p mspace-$T --env-file .env.$T"
           check() { [ -f ".env.$T" ] || { echo ".env.$T 파일이 없음"; return 1; }; for E in dev prod; do [ -f ".env.$E" ] || continue; docker compose -p "mspace-$E" --env-file ".env.$E" config -q || return 1; done; }
-          if [ ! -s "$GOOD" ]; then
-            check || { echo "지금 ~/infra의 compose 설정부터 틀림: 멈춤"; exit 1; }
-            git rev-parse HEAD > "$GOOD"
-          fi
-          OLD=$(cat "$GOOD")
-          git merge-base --is-ancestor "$OLD" HEAD || { echo "기록된 검사 통과 커밋($OLD)이 main에 없음: 멈춤"; exit 1; }
+          # 되돌릴 자리는 기록 파일이 아니라 "지금 받기 전 커밋"을 직접 검사해서 정한다 (기록이 오래돼도 지금 돌고 있는 설정으로 돌아가게)
+          check || { echo "지금 ~/infra의 compose 설정부터 틀림: 아무것도 바꾸지 않고 멈춤"; exit 1; }
+          OLD=$(git rev-parse HEAD)
           git pull --ff-only
-          check || { echo "compose 설정 오류: infra를 이전 커밋으로 되돌림"; git reset -q --hard "$OLD"; exit 1; }
+          check || { echo "compose 설정 오류: infra를 받기 전 커밋으로 되돌림"; git reset -q --hard "$OLD"; exit 1; }
           FORCE="$F" scripts/rollout.sh "$T" "$@" </dev/null      # 안쪽 docker 명령이 남은 원격 스크립트(표준 입력)를 먹지 않게
-          # 입구(edge)를 지나 gateway → core health까지 확인
-          PORT=$(grep -E '^PORT=' ".env.$T" | tail -n 1 | cut -d= -f2- | tr -d "\"' \r")
-          ADDR=$( (grep -E '^BIND_ADDR=' ".env.$T" || true) | tail -n 1 | cut -d= -f2- | tr -d "\"' \r"); case "$ADDR" in ""|0.0.0.0) ADDR=127.0.0.1;; esac
-          [[ "$PORT" =~ ^[0-9]+$ ]] || { echo ".env.$T의 PORT 값이 숫자가 아님"; exit 1; }
+          # 입구(edge)를 지나 gateway → core health까지 확인. 주소는 .env를 직접 읽지 않고 compose가 실제로 연 포트에서 얻는다
+          HP=$($C port edge 8000 </dev/null | head -n 1)
+          [ -n "$HP" ] || { echo "edge가 연 서버 포트를 찾지 못함"; exit 1; }
+          case "$HP" in 0.0.0.0:*) HP="127.0.0.1:${HP#*:}" ;; esac
           for i in $(seq 1 30); do
-            curl -fsS --max-time 5 "$ADDR:$PORT/actuator/health" | grep -q '"status":"UP"' && { git rev-parse HEAD > "$GOOD"; echo "입구 health 확인 ($T)"; exit 0; }   # 교체·health까지 끝난 커밋만 기록
+            curl -fsS --max-time 5 "http://$HP/actuator/health" | grep -q '"status":"UP"' && { git rev-parse HEAD > "$GOOD"; echo "입구 health 확인 ($T, $HP)"; exit 0; }   # 교체·health까지 끝난 커밋만 기록
             sleep 2
           done
           echo "입구 health 확인 실패"; exit 1
