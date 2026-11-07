@@ -65,6 +65,9 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILE:-dev}
       # 키패드(게이트웨이)가 Authorization: Bearer 로 보내는 장치 토큰. 비면 core가 장치 요청을 전부 401로 막으니 비어 있으면 아예 안 켠다
       MSPACE_DEVICE_TOKEN: ${MSPACE_DEVICE_TOKEN:?.env에 MSPACE_DEVICE_TOKEN을 넣어 주세요 (openssl rand -hex 32)}
+      # 장치별 토큰(core #91): "deviceId:roomId:토큰"을 쉼표로 (예: keypad-1:1:aaa,qr-1:1:bbb). 그 방에만 쓸 수 있다.
+      # 비워 두면 위 공용 토큰만 쓴다. 공용 토큰과 같은 값을 넣으면 core가 뜨지 않는다. 토큰에 : 와 , 는 못 쓴다
+      MSPACE_DEVICES: ${MSPACE_DEVICES:-}
       # 로그인 토큰 서명값. 필수: 비어 있으면 compose가 시작을 멈춘다. 값을 바꾸면 모두 다시 로그인해야 한다
       JWT_SECRET: ${JWT_SECRET:?.env에 JWT_SECRET을 넣어 주세요 (openssl rand -base64 48)}
       # refresh 토큰 쿠키를 HTTPS로만 보낸다. http 주소로만 열 때(맥 Safari 시험)만 false
