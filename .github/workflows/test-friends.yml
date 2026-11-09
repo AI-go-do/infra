@@ -51,7 +51,7 @@ jobs:
           UPDATE friendship f SET status = 'ACCEPTED', accepted_at = now()
           FROM users t, users r
           WHERE f.status = 'PENDING' AND f.addressee_id = t.id AND f.requester_id = r.id
-            AND t.student_id BETWEEN '99990001' AND '99990005'
+            AND t.student_id IN ('99990001', '99990002', '99990003', '99990004', '99990005')
           RETURNING r.student_id AS requester, t.student_id AS test_account;
           SQL
           REMOTE
