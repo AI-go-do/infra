@@ -1,0 +1,65 @@
+# 개발 서버(dev)에서 팀원 계정을 관리자로 바꾼다.
+#   Actions 탭 → "관리자 지정 (dev)" → Run workflow → 학교 메일 입력
+# 쓰는 때: 팀원이 dev에 학교 메일로 한 번 로그인해 계정이 생긴 뒤. 바꾼 뒤 그 팀원이 다시 로그인하면 마이 탭에 "관리자"가 보인다.
+# 학교 밖에서도 누를 수 있게 Actions가 대신 서버에 접속한다(앱 배포와 같은 org Secrets DEPLOY_*). 시연 prod는 안 건드린다
+name: 관리자 지정 (dev)
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: '관리자로 바꿀 학교 메일 (예: hong@chosun.ac.kr)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-grant-dev
+  cancel-in-progress: false
+
+jobs:
+  grant:
+    # 서버 접속 버튼은 main에 있는 것만 돌린다 (다른 브랜치에서 고친 명령이 서버에 가지 않게)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 메일 모양 확인
+        env:
+          EMAIL: ${{ inputs.email }}
+        run: |
+          # 학교 메일만 받는다. 이 모양이면 SQL·셸에 그대로 넣어도 안전하다
+          [[ "$EMAIL" =~ ^[A-Za-z0-9._-]+@chosun\.ac\.kr$ ]] || { echo "학교 메일(…@chosun.ac.kr) 모양이 아니에요"; exit 1; }
+
+      - name: SSH 키 준비
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          [ -n "$SSH_KEY" ] && [ -n "$KNOWN_HOSTS" ] && [ -n "$HOST" ] && [ -n "$PORT" ] && [ -n "$SSH_USER" ] || { echo "DEPLOY_* Secrets를 이 레포에서 볼 수 없음: org Secrets 설정에서 infra 레포를 허용 목록에 넣어 주세요"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts   # 처음 보는 서버면 접속을 거부한다 (가짜 서버 방지)
+
+      - name: dev DB에서 관리자로 바꾸기
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+          EMAIL: ${{ inputs.email }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "$PORT" -o BatchMode=yes "$SSH_USER@$HOST" "EMAIL='$EMAIL' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd ~/infra
+          [ -f .env.dev ] || { echo ".env.dev 파일이 없음"; exit 1; }
+          n=$(docker compose -p mspace-dev --env-file .env.dev exec -T db \
+            sh -c 'psql -v ON_ERROR_STOP=1 -qtA -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+            <<<"WITH u AS (UPDATE users SET role = 'ADMIN' WHERE email = '$EMAIL' RETURNING 1) SELECT count(*) FROM u;")
+          if [ "$n" = "1" ]; then echo "관리자로 바꿨어요. 그 팀원이 로그아웃했다가 다시 로그인하면 돼요"
+          else echo "그 메일로 가입한 계정이 없어요. dev에 학교 메일로 한 번 로그인한 뒤 다시 눌러 주세요"; exit 1; fi
+          REMOTE
