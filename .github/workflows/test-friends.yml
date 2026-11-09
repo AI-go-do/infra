@@ -1,0 +1,57 @@
+# 개발 서버 테스트 계정(99990001~99990005)에 온 친구 요청을 한 번에 수락한다.
+#   Actions 탭 → "테스트 친구 요청 수락" → Run workflow
+# 쓰는 때: 팀원이 웹 친구 화면에서 테스트 학번으로 요청을 보낸 뒤. 테스트 계정은 가짜 메일이라 직접 로그인해 수락할 수 없어서
+# dev DB만 건드린다(시연 prod는 안 건드림). 비밀값은 앱 배포와 같은 org Secrets(DEPLOY_*)를 쓴다
+name: 테스트 친구 요청 수락
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-friends-dev
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    # 서버 접속 버튼은 main에 있는 것만 돌린다 (다른 브랜치에서 고친 명령이 서버에 가지 않게)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: SSH 키 준비
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          [ -n "$SSH_KEY" ] && [ -n "$KNOWN_HOSTS" ] && [ -n "$HOST" ] && [ -n "$PORT" ] && [ -n "$SSH_USER" ] || { echo "DEPLOY_* Secrets를 이 레포에서 볼 수 없음: org Secrets 설정에서 infra 레포를 허용 목록에 넣어 주세요"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts   # 처음 보는 서버면 접속을 거부한다 (가짜 서버 방지)
+
+      - name: dev DB에서 요청 수락
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "$PORT" -o BatchMode=yes "$SSH_USER@$HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd ~/infra
+          [ -f .env.dev ] || { echo ".env.dev 파일이 없음"; exit 1; }
+          # DB 비밀번호는 컨테이너 안 환경변수를 쓴다(로그에 안 나옴). 학번만 찍고 이름·메일은 찍지 않는다
+          docker compose -p mspace-dev --env-file .env.dev exec -T db \
+            sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+          \echo '수락한 요청 (보낸 사람 학번 → 테스트 학번):'
+          UPDATE friendship f SET status = 'ACCEPTED', accepted_at = now()
+          FROM users t, users r
+          WHERE f.status = 'PENDING' AND f.addressee_id = t.id AND f.requester_id = r.id
+            AND t.student_id IN ('99990001', '99990002', '99990003', '99990004', '99990005')
+          RETURNING r.student_id AS requester, t.student_id AS test_account;
+          SQL
+          REMOTE
