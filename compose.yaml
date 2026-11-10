@@ -76,6 +76,8 @@ services:
       MAIL_ENABLED: ${MAIL_ENABLED:-false}
       MAIL_USERNAME: ${MAIL_USERNAME:-}
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      # 경고 철회 요청 Gemini 판단기(core #117). 비우면 규칙 판단기만. CORE_GEMINI_API_KEY를 따로 넣으면 그 키, 없으면 비서와 같은 GEMINI_API_KEY
+      GEMINI_API_KEY: ${CORE_GEMINI_API_KEY:-${GEMINI_API_KEY:-}}
       TZ: Asia/Seoul
     depends_on:
       db:
