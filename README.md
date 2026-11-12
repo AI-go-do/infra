@@ -121,7 +121,7 @@ flowchart LR
 
 ## 되돌리기
 
-`.env.*`의 `CORE_TAG`(화면은 `WEB_TAG`, 비서는 `ASSISTANT_TAG`, 게이트웨이는 `GATEWAY_TAG`)를 이전 이미지(`sha-xxxxxxx`)로 바꾸고, compose 설정을 먼저 확인한 뒤 다시 켠다.
+`.env.*`의 `CORE_TAG`(화면은 `WEB_TAG`, 비서는 `ASSISTANT_TAG`, 게이트웨이는 `GATEWAY_TAG`, 방 공기는 `CLIMATE_TAG`)를 이전 이미지(`sha-xxxxxxx`)로 바꾸고, compose 설정을 먼저 확인한 뒤 다시 켠다.
 
 ```bash
 T=dev   # 시연 서버는 T=prod
