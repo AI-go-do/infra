@@ -60,6 +60,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:?.env에 JWT_SECRET을 넣어 주세요 (openssl rand -base64 48)}
       CORE_URI: http://edge:8080
       CLIMATE_DATA_DIR: /data
+      # 교육장 센서·보드 A 추론 결과 직접 구독(재웅 11/12 결정). 비면 구독하지 않고 gateway 사본만 쓴다
+      CLIMATE_MQTT_USERNAME: ${CLIMATE_MQTT_USERNAME:-}
+      CLIMATE_MQTT_PASSWORD: ${CLIMATE_MQTT_PASSWORD:-}
       TZ: Asia/Seoul
     volumes:
       - climate-data:/data

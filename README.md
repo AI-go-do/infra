@@ -127,6 +127,7 @@ flowchart LR
 T=dev   # 시연 서버는 T=prod
 C="docker compose -p mspace-$T --env-file .env.$T"
 $C config -q && scripts/rollout.sh $T core web gateway   # 끊김 없이. 비서는 $C up -d --no-deps mcp agent
+$C up -d --no-deps climate                               # 방 공기는 rollout.sh 대상이 아니라 따로 다시 켠다
 ```
 
 ## 백업
