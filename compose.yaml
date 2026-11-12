@@ -38,6 +38,9 @@ services:
       CORE_URI: http://edge:8080
       AGENT_URI: http://agent:8091
       WEB_URI: http://edge:8081
+      # 방 공기 판단(climate). /api/climate/** 길과, core가 받아 준 센서 값 사본을 보낼 안쪽 주소
+      CLIMATE_URI: http://climate:8095
+      CLIMATE_MIRROR_URL: http://climate:8095/internal/sensor-events
       TZ: Asia/Seoul
     depends_on:
       edge:
@@ -47,6 +50,23 @@ services:
       web:
         condition: service_started
     stop_grace_period: 40s              # 끌 때 하던 요청을 마칠 시간 (Spring Boot graceful 30초 + 여유)
+    restart: unless-stopped
+
+  # 방 공기 이상 탐지·냉난방 자동 제어 (mspace-climate 레포, 재웅 11/12). 포트를 열지 않고 gateway 뒤에서만
+  # 센서 값은 gateway가 사본으로 주고, 재실·관리자 확인은 core에 묻는다. 7일 기준선 기록은 climate-data 볼륨에 남는다
+  climate:
+    image: ghcr.io/ai-go-do/mspace-climate:${CLIMATE_TAG:-develop}
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?.env에 JWT_SECRET을 넣어 주세요 (openssl rand -base64 48)}
+      CORE_URI: http://edge:8080
+      CLIMATE_DATA_DIR: /data
+      # 교육장 센서·보드 A 추론 결과 직접 구독(재웅 11/12 결정). 비면 구독하지 않고 gateway 사본만 쓴다
+      CLIMATE_MQTT_USERNAME: ${CLIMATE_MQTT_USERNAME:-}
+      CLIMATE_MQTT_PASSWORD: ${CLIMATE_MQTT_PASSWORD:-}
+      TZ: Asia/Seoul
+    volumes:
+      - climate-data:/data
+    stop_grace_period: 20s              # 끌 때 기록 파일을 남길 시간
     restart: unless-stopped
 
   # 화면(PWA): 빌드한 정적 파일을 내는 컨테이너 (mspace-web 레포 이미지). 밖으로 열지 않고 gateway를 통해서만
@@ -169,3 +189,4 @@ services:
 volumes:
   db-data:
   redis-data:
+  climate-data:
