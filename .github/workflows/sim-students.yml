@@ -112,6 +112,7 @@ jobs:
             echo "가상 학생 $N명 준비됨"
           else
             set_env ""
+            $C stop climate </dev/null   # 취소 전에 옛 climate를 멈춰 그 사이 새 예약이 생기지 않게 한다
             # 시작 전 예약만 취소(BOOKED → CANCELED는 core가 허용하는 길). 쓰는 중인 예약은 끝 시각에 core가 자동 퇴실시킨다
             CANCELED=$(psql_dev <<SQL
           WITH c AS (
