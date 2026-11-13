@@ -114,15 +114,20 @@ jobs:
             set_env ""
             $C stop climate </dev/null   # 취소 전에 옛 climate를 멈춰 그 사이 새 예약이 생기지 않게 한다
             # 시작 전 예약만 취소(BOOKED → CANCELED는 core가 허용하는 길). 쓰는 중인 예약은 끝 시각에 core가 자동 퇴실시킨다
-            CANCELED=$(psql_dev <<SQL
+            # 취소가 실패해도 climate는 꼭 다시 띄운다(멈춘 채 남지 않게). 실패는 맨 끝에 알린다
+            if CANCELED=$(psql_dev <<SQL
           WITH c AS (
             UPDATE reservation r SET status = 'CANCELED', canceled_at = now()
              WHERE r.owner_id IN (SELECT id FROM users WHERE $SIM) AND r.status = 'BOOKED' AND r.start_at > now()
             RETURNING r.id)
           SELECT count(*) FROM c;
           SQL
-            )
-            echo "가상 학생 끔: 시작 전 예약 ${CANCELED:-0}건 취소"
+            ); then
+              echo "가상 학생 끔: 시작 전 예약 ${CANCELED:-0}건 취소"
+            else
+              echo "예약 취소 실패: climate를 다시 띄운 뒤 실패로 끝내요"
+              CANCEL_FAILED=1
+            fi
           fi
 
           check || { echo "compose 설정 오류(.env.dev)"; exit 1; }
@@ -135,7 +140,7 @@ jobs:
                   && { echo "climate가 가상 학생을 켰어요"; exit 0; }
                 echo "climate는 떴지만 가상 학생이 안 켜졌어요 (climate 이미지가 옛 판일 수 있음: mspace-climate develop 배포 뒤 다시 누르기)"; exit 1
               fi
-              echo "climate 다시 뜸"; exit 0
+              echo "climate 다시 뜸"; exit "${CANCEL_FAILED:-0}"
             fi
             sleep 3
           done
