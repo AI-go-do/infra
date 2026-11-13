@@ -65,6 +65,9 @@ services:
       CLIMATE_MQTT_PASSWORD: ${CLIMATE_MQTT_PASSWORD:-}
       # 켤 기기를 고르는 오디 AI(제미나이). 비우면 규칙만. CLIMATE_GEMINI_API_KEY를 따로 넣으면 그 키, 없으면 비서와 같은 GEMINI_API_KEY
       GEMINI_API_KEY: ${CLIMATE_GEMINI_API_KEY:-${GEMINI_API_KEY:-}}
+      # 시뮬레이션 센서 값을 core /api/sensor-events로도 보낼 때 쓰는 장치 토큰(core와 같은 값, 방마다 sensor-N만 씀).
+      # 비면 core로 안 보낸다
+      MSPACE_DEVICES: ${MSPACE_DEVICES:-}
       TZ: Asia/Seoul
     volumes:
       - climate-data:/data
