@@ -9,6 +9,7 @@ M-SPACE 서버 실행 설정 (담당: 재웅). 앱 코드는 각 저장소(mspac
 | `scripts/rollout.sh` | 무중단 교체: 새 컨테이너를 옆에 띄워 확인 → 옛 것을 끈다. 각 레포 `deploy.yml`이 부른다 |
 | `.github/workflows/rollout.yml` | 서버 터미널 없이 무중단 교체를 손으로 돌린다 (Actions → "무중단 교체" → Run workflow) |
 | `.github/workflows/test-login.yml` | dev 테스트 계정(99990006 `mspace-test6@chosun.ac.kr` 등)으로 로그인: 웹에서 "번호 받기" → Actions "테스트 계정 로그인 (dev)"에 내가 정한 6자리 → 10분 안에 입력. 가짜 메일 계정에만 동작 |
+| `.github/workflows/sim-students.yml` | dev 가상 학생 켜기·끄기: Actions "가상 학생 (dev)" → start/stop. 가상 학생 60명(학번 9998xxxx, `sim-student*@chosun.ac.kr`)을 만들고 목록을 `.env.dev`의 `CLIMATE_SIM_STUDENTS`에 넣어 climate를 다시 띄운다. climate가 2~5번 방에 실제 예약·QR 입실·퇴실을 만들어 학생 앱·관제실이 같이 움직인다. 끄면 시작 전 예약을 취소. dev만 |
 | `scripts/backup.sh` | DB를 `backups/dev/`·`backups/prod/`에 날짜별로 백업, 7일 지난 건 삭제. 서버 cron으로 매일 실행 |
 | `.env.example` | 환경별 값 목록 (값은 비움). 실제 값은 `.env.dev` / `.env.prod`, 커밋 금지 |
 

@@ -68,6 +68,9 @@ services:
       # 시뮬레이션 센서 값을 core /api/sensor-events로도 보낼 때 쓰는 장치 토큰(core와 같은 값, 방마다 sensor-N만 씀).
       # 비면 core로 안 보낸다
       MSPACE_DEVICES: ${MSPACE_DEVICES:-}
+      # 가상 학생("회원id:학번,…"): 가상 방(2~5번)에 가상 학생이 실제 예약·QR 입실·퇴실을 한다(학생 앱·관제실이 같이 움직임).
+      # "가상 학생 (dev)" 버튼이 .env.dev에만 넣는다. 비면 꺼짐. 시연(.env.prod)에는 넣지 않는다
+      CLIMATE_SIM_STUDENTS: ${CLIMATE_SIM_STUDENTS:-}
       TZ: Asia/Seoul
     volumes:
       - climate-data:/data
