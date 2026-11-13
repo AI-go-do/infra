@@ -8,6 +8,7 @@ M-SPACE 서버 실행 설정 (담당: 재웅). 앱 코드는 각 저장소(mspac
 | `edge/default.conf` | 입구 문 nginx 설정. 교체 중인 컨테이너를 피해 살아 있는 쪽으로 보낸다 (아래 "무중단 배포") |
 | `scripts/rollout.sh` | 무중단 교체: 새 컨테이너를 옆에 띄워 확인 → 옛 것을 끈다. 각 레포 `deploy.yml`이 부른다 |
 | `.github/workflows/rollout.yml` | 서버 터미널 없이 무중단 교체를 손으로 돌린다 (Actions → "무중단 교체" → Run workflow) |
+| `.github/workflows/test-login.yml` | dev 테스트 계정(99990006 `mspace-test6@chosun.ac.kr` 등)으로 로그인: 웹에서 "번호 받기" → Actions "테스트 계정 로그인 (dev)"에 내가 정한 6자리 → 10분 안에 입력. 가짜 메일 계정에만 동작 |
 | `scripts/backup.sh` | DB를 `backups/dev/`·`backups/prod/`에 날짜별로 백업, 7일 지난 건 삭제. 서버 cron으로 매일 실행 |
 | `.env.example` | 환경별 값 목록 (값은 비움). 실제 값은 `.env.dev` / `.env.prod`, 커밋 금지 |
 
